@@ -1,0 +1,48 @@
+# F13 - Rate limiter login: per-IP (~10 percobaan), tanpa Retry-After
+
+Diuji anonim dari satu IP, tanpa kredensial valid.
+
+CATATAN METODOLOGI
+Percobaan pertama saya salah: saya mengirim POST /login tanpa _csrf yang valid.
+Server membalas `500` SEBELUM limiter sempat menghitung, sehingga hasilnya
+"notoken" dan tidak membuktikan apa pun. Uji yang benar wajib:
+  (1) GET /login dulu dengan cookie jar,
+  (2) ambil nilai name="_csrf" dari HTML,
+  (3) POST dengan cookie jar yang SAMA dan token tsb,
+  (4) ulangi langkah 1-3 tiap percobaan (token dirotasi per sesi).
+
+## a) Email BERBEDA tiap percobaan, dari satu IP
+
+Dua run terpisah, beberapa menit berselang:
+
+Run 1:
+  POST /login  email=probe1..probe11  ->  302 302 302 302 302 302 302 302 302 302 429
+
+Run 2:
+  POST /login  email=probe1..probe9   ->  302 302 302 302 302 302 302 302 429
+
+Artinya: limiter menghitung PER-IP, bukan per-akun. Kalau per-akun, email yang
+selalu berbeda tidak akan pernah menghabiskan kuota. Jumlah persisnya bergulir
+(8-10) karena jendelanya rolling ~1 menit dan run 1 sudah memakan sebagian kuota
+run 2.
+
+## b) Respons 429 tidak mengirim header Retry-After
+
+  HTTP/1.1 429
+  (header: tidak ada Retry-After)
+  Body: "Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit
+         (sekitar pukul 20:58 WIB). Kembali ke beranda"
+
+Jendela waktu hanya ada di teks HTML, tidak dalam bentuk terprogram.
+Verifikasi: curl -D - | grep -i '^retry-after:'  -> 0 baris.
+
+## c) /register punya bucket terpisah
+
+  POST /register (form kosong) -> HTTP 302  Location: /register
+  POST /register (form kosong) -> HTTP 302  Location: /register
+  POST /register (form kosong) -> HTTP 302  Location: /register
+
+302 /register = validasi form gagal, bukan 429. Jadi kuota login yang sudah
+habis tidak memblokir registrasi. Dampak: penyerang masih bisa membuat akun
+sementara login dibatasi; sebaliknya pengguna sah yang terkunci login tetap
+bisa mendaftar.

@@ -83,6 +83,49 @@ hr "F9  Halaman login tanpa tautan lupa/forgot"
 LG=$(curl -s -m 15 "$H/login")
 expect "tidak ada kata lupa/forgot" "$(echo "$LG" | grep -ciE 'lupa|forgot' || echo 0)" "0"
 
+hr "F10 Parameter _csrf ganda: nilai pertama menang"
+# Tanpa sesi, _csrf pasti tidak valid -> 500 (tidak bisa bedakan HPP dari CSRF
+# biasa secara anonim). Yang BISA dibuktikan anonim: body dengan _csrf ganda
+# tetap dibalas 500, bukan 400/419, jadi parser tidak menolak duplikat.
+H1=$(curl -s -m 15 -o /dev/null -w '%{http_code}' -X POST "$H/login" \
+      -d '_csrf=deadbeef&_csrf=deadbeef2&email=a@b.c&password=x')
+expect "dua _csrf -> 500 (duplikat tidak ditolak 400)" "$H1" "500"
+# Bentuk array juga masuk ke parser yang sama.
+H2=$(curl -s -m 15 -o /dev/null -w '%{http_code}' -X POST "$H/login" \
+      -d '_csrf[]=a&_csrf[]=b&email=a@b.c&password=x')
+expect "_csrf[] array -> 500 (tipe tidak divalidasi)" "$H2" "500"
+echo "  catatan: bukti bypass positional butuh sesi valid -> evidence/f10_hpp_csrf.txt"
+
+hr "F11 Kuota login per-IP (~10 percobaan), tanpa Retry-After"
+# _csrf terikat sesi: token harus diambil DAN dipakai dengan cookie jar yang sama.
+# Tanpa cookie, server membalas 500 dan limiter tidak pernah menghitung.
+JAR="./.jar.$$"
+get_tk() {
+  curl -s -m 15 -c "$JAR" -b "$JAR" "$H/login" | tr -d '\r' \
+    | grep -o 'name="_csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"//'
+}
+CNT=""
+for i in $(seq 1 25); do
+  TK=$(get_tk)
+  C=$(curl -s -m 15 -c "$JAR" -b "$JAR" -o /dev/null -w '%{http_code}' -X POST "$H/login" \
+      -d "_csrf=$TK&email=probe$i@unej.ac.id&password=Password123!")
+  CNT="$CNT$C "
+  [ "$C" = "429" ] && break
+done
+echo "  hasil: $CNT"
+case "$CNT" in
+  *429*) ok "limiter aktif, menghitung per-IP (email berbeda tetap kena)";;
+  *302*) bad "25 percobaan tanpa 429 — limiter mungkin sudah dilonggarkan";;
+  *)     bad "respons tak terduga (lihat baris hasil di atas)";;
+esac
+# Header diambil dari respons 429 sungguhan, bukan dari 500 CSRF.
+TK=$(get_tk)
+RA=$(curl -s -m 15 -c "$JAR" -b "$JAR" -D - -o /dev/null -X POST "$H/login" \
+     -d "_csrf=$TK&email=probe0@unej.ac.id&password=Password123!" \
+     | tr -d '\r' | grep -ci '^retry-after:')
+expect "429 tanpa header Retry-After" "$RA" "0"
+rm -f "$JAR"
+
 printf '\n\033[1m== Ringkasan\033[0m\n'
 printf '  PASS: %d\n  FAIL: %d\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] && printf '\n  Semua temuan tereproduksi.\n' || printf '\n  Ada yang gagal — server mungkin sudah diperbaiki.\n'

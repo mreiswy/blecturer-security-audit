@@ -25,8 +25,17 @@ Pengujian dilakukan dengan izin pemilik akun, pada 27 Oktober 2026.
 | 7 | Akun dibuat sebelum email diverifikasi (pre-verification squatting) | **Low** | Terkonfirmasi |
 | 8 | Tidak ada alur reset password | **Low** | Terkonfirmasi |
 | 9 | Header keamanan terpasang ganda | **Info** | Terkonfirmasi |
+| 10 | Parameter `_csrf` ganda (HPP) diterima → HTTP 500, bukan 400/419 | **Medium** | Terkonfirmasi |
+| 11 | Kuota login ~10 percobaan per IP, tanpa header `Retry-After` | **Low** | Terkonfirmasi |
 
-Tidak ditemukan: RCE, SQL injection, IDOR, auth bypass, XSS, CSRF bypass, session fixation, path traversal.
+Tidak ditemukan: RCE, SQL injection, IDOR, auth bypass, XSS, CSRF bypass,
+session fixation, path traversal, request smuggling, cache poisoning, race
+condition pada rate limiter, BFLA, mass assignment, SSRF, JWT/algorithm
+confusion, excessive data exposure.
+
+**Catatan: F10 adalah perluasan dari F3.** Keduanya punya akar yang sama —
+framework tidak membedakan "token tidak valid" dari "permintaan rusak" dan
+membalas keduanya dengan 500. Perbaikan F3 sekaligus menutup sebagian F10.
 
 ---
 
@@ -347,6 +356,104 @@ semua respons, termasuk halaman error.
 
 ---
 
+## 10. Parameter `_csrf` ganda (HPP) diterima parser, gagal sebagai 500 — Medium
+
+Framework menerima parameter ganda untuk field keamanan `_csrf` tanpa menolaknya,
+dan setiap varian ganda berakhir di `500 Internal Server Error` — bukan `400`
+(permintaan rusak) atau `419` (CSRF gagal).
+
+```
+$ # baseline: satu token valid
+POST /profile/name   _csrf=<valid>&name=second
+HTTP/1.1 302   Location: /profile        (tersimpan)
+
+$ # token valid DIIKUTI nilai sampah
+POST /profile/name   _csrf=<valid>&_csrf=deadbeef&name=second
+HTTP/1.1 500   (halaman "Sesi kedaluwarsa")   (TIDAK tersimpan)
+
+$ # nilai sampah DIIKUTI token valid
+POST /profile/name   _csrf=deadbeef&_csrf=<valid>&name=second
+HTTP/1.1 500   (TIDAK tersimpan)
+
+$ # bentuk array
+POST /profile/name   _csrf[]=<valid>&name=second
+HTTP/1.1 500
+```
+
+**Apa yang TIDAK terbukti.** Saya sempat menduga ada bypass posisional (nilai
+pertama sampah, nilai kedua valid → diterima). Pengujian membantahnya: semua
+varian tanpa token valid di posisi pertama tetap ditolak. Tidak ada bypass CSRF
+di sini, dan laporan ini tidak mengklaimnya.
+
+**Apa yang terbukti.** Dua hal:
+
+1. **Parser tidak menolak duplikat field keamanan.** Kontrol di depan aplikasi
+   (openresty, WAF, aturan proxy) bisa membaca nilai `_csrf` yang berbeda dari
+   yang dipakai aplikasi. Ini kelas bug *layer diff*: server ini punya tiga
+   lapisan (openresty → framework → authz) yang bisa berbeda tafsir atas
+   parameter yang sama.
+2. **500 alih-alih 419.** Sama seperti temuan #3: kegagalan CSRF dilaporkan
+   sebagai error server. Setiap 500 masuk ke metrik error dan notifikasi
+   on-call, jadi masukan remeh bisa membanjiri monitoring dan menyembunyikan
+   kegagalan sungguhan.
+
+**Dampak.** Tidak langsung memberi akses. Nilainya adalah jalur divergensi
+tafsir antar lapisan, plus noise error-rate.
+
+**Bukti:** `evidence/f10_hpp_csrf.txt`
+
+**Perbaikan.** Tolak body dengan parameter ganda untuk field keamanan
+(`_csrf`) dengan `400`. Ambil token dari satu sumber saja setelah memvalidasi
+jumlah kemunculan, dan kembalikan `419` untuk semua kegagalan CSRF — lihat #3.
+
+---
+
+## 11. Kuota login ~10 percobaan per IP, tanpa `Retry-After` — Low
+
+Limiter login menghitung **per-IP**, bukan per-akun. Email berbeda-beda dari
+satu IP tetap kena batasnya. Kuotanya bergulir (rolling window ~1 menit), jadi
+jumlah persisnya bervariasi antara 8 dan 10 tergantung sisa jendela:
+
+```
+$ # satu cookie jar, token _csrf diambil ulang tiap percobaan, email SELALU beda
+$ # hasil dua run terpisah:
+302 302 302 302 302 302 302 302 429 429          (429 di percobaan ke-9)
+302 302 302 302 302 302 302 302 302 302 429      (429 di percobaan ke-11)
+```
+
+Halaman 429 menyebut jendela waktu di HTML, tetapi **tidak mengirim header
+`Retry-After`**:
+
+```
+HTTP/1.1 429
+Body: Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit (sekitar pukul 20:58 WIB).
+```
+
+Catatan metodologi: percobaan dengan `_csrf` tidak valid dibalas `500` **sebelum**
+limiter menghitung, jadi uji ini wajib memakai token asli + cookie jar yang sama.
+Percobaan pertama saya salah karena itu.
+
+**Dampak.** Dua arah, keduanya kecil:
+
+- **Terlalu ketat untuk pengguna sah.** Satu laboratorium atau satu NAT kampus
+  berbagi satu IP. Delapan salah ketik dari orang berbeda akan mengunci seluruh
+  lab selama satu menit. Ini masalah ketersediaan, bukan kebocoran.
+- **Tidak ada `Retry-After`.** Klien otomatis (aplikasi mobile, skrip) tidak
+  punya cara terprogram untuk tahu kapan boleh mencoba lagi; mereka hanya bisa
+  menebak atau mem-parse HTML.
+
+Karena pembatasnya per-IP, penyerang dengan banyak IP tetap bisa menyebar
+percobaan. Ini **bukan** temuan kritis — dicatat karena memengaruhi pengguna
+nyata dan mudah diperbaiki.
+
+**Bukti:** `evidence/f13_rate_limit.txt`
+
+**Perbaikan.** Kirim `Retry-After` (detik) bersama `429`. Tambahkan juga
+penghitung per-akun di samping per-IP, atau longgarkan kuota IP untuk rentang
+kampus, supaya satu laboratorium tidak saling mengunci.
+
+---
+
 ## Area yang diuji dan bersih
 
 Kejujuran laporan sama pentingnya dengan temuannya. Berikut yang **diuji dan
@@ -391,7 +498,7 @@ tidak ditemukan masalah**:
 ```
 .
 ├── README.md                      laporan ini
-├── reproduce.sh                   reproduksi temuan #1–#5, #8, #9 (anonim, tanpa kredensial)
+├── reproduce.sh                   reproduksi temuan #1–#5, #8–#11 (anonim, tanpa kredensial)
 └── evidence/
     ├── f1_8080_http_headers.txt   header port 8080 (200, nginx, tanpa TLS)
     ├── f1_8080_manifest.txt       manifest.json → "Termix"
@@ -401,10 +508,14 @@ tidak ditemukan masalah**:
     ├── f2_cors_preflight.txt      preflight mengizinkan metode tulis + header internal
     ├── f2_unauth_json.txt         401 {"error":"Missing authentication token"}
     ├── f3_redirect_8080.txt       /assets → http://…:8080/
+    ├── f3_csrf_500.txt            POST tanpa _csrf → HTTP 500 (empat endpoint)
     ├── f4_csrf_500.txt            POST tanpa _csrf → HTTP 500
     ├── f5_xfp_cookie.txt          X-Forwarded-Proto: http → cookie tanpa `secure`
     ├── f6_dup_headers.txt         HSTS & nosniff terpasang dua kali
     ├── f8_no_reset.txt            semua path reset password → 404
+    ├── f10_hpp_csrf.txt           _csrf ganda → 500; bypass posisional TIDAK terbukti
+    ├── f13_rate_limit.txt         limiter per-IP ~10 percobaan, tanpa Retry-After
+    ├── n_csrf_cross_session.txt   token lintas sesi ditolak (uji negatif)
     ├── quests_before.html         snapshot Quest Board sebelum pengujian (data disamarkan)
     ├── marketplace.html           snapshot Marketplace (data disamarkan)
     └── *.js                       api.js, quests.js, marketplace.js, layout.js
@@ -421,7 +532,12 @@ tidak ditemukan masalah**:
 - Beberapa berkas uji sempat tertulis ke akun pemilik saat pengujian dan sudah
   dilaporkan terpisah untuk dibersihkan.
 - `reproduce.sh` hanya menjalankan permintaan HTTP baca-saja (GET/OPTIONS) dan
-  POST tanpa kredensial ke endpoint publik.
+  POST tanpa kredensial ke endpoint publik. Bukti yang butuh sesi (F10, dan
+  uji negatif lintas sesi) diambil sekali dengan sesi pemilik akun, lalu
+  disamarkan — skrip tidak memuat cookie apa pun.
+- Temuan #11 mengirim beberapa percobaan login dengan email karangan
+  (`probe1@unej.ac.id` dan sejenisnya) dan password salah. Tidak ada akun
+  nyata yang dicoba, dan tidak ada kredensial yang ditebak.
 
 ---
 

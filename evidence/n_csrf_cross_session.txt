@@ -1,0 +1,4 @@
+# Catatan - token CSRF terikat konteks sesi (diuji, BERSIH)
+
+## Token dari sesi anonim (GET /login) dipakai pada sesi terautentikasi
+HTTP/1.1 500  (ditolak - benar)

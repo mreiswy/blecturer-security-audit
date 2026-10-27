@@ -1,0 +1,56 @@
+# F10 - Parameter _csrf ganda (HTTP Parameter Pollution)
+
+Diuji pada sesi terautentikasi milik pemilik akun (cookie [REDACTED]).
+Nama profil diubah sementara lalu DIKEMBALIKAN ke nilai aslinya.
+
+## a) Baseline - satu token valid
+
+  POST /profile/name
+  Body: _csrf=<TOKEN_VALID>&name=second
+  -> HTTP 302  Location: /profile
+  (perubahan tersimpan)
+
+## b) Token valid DIIKUTI nilai sampah
+
+  POST /profile/name
+  Body: _csrf=<TOKEN_VALID>&_csrf=deadbeef&name=second
+  -> HTTP 500  (halaman "Sesi kedaluwarsa")
+  (perubahan TIDAK tersimpan)
+
+## c) Nilai sampah DIIKUTI token valid
+
+  POST /profile/name
+  Body: _csrf=deadbeef&_csrf=<TOKEN_VALID>&name=second
+  -> HTTP 500  (halaman "Sesi kedaluwarsa")
+  (perubahan TIDAK tersimpan)
+
+## d) Bentuk array
+
+  POST /profile/name
+  Body: _csrf[]=<TOKEN_VALID>&name=second
+  -> HTTP 500
+  (token array tidak diterima, tapi tetap 500 - bukan 400/419)
+
+## Yang terbukti dan yang TIDAK terbukti
+
+TERBUKTI:
+- Parser menerima parameter ganda untuk field keamanan tanpa menolaknya.
+- Kegagalan CSRF pada jalur ini dilaporkan sebagai 500, bukan 419. Konsisten
+  dengan temuan #3: satu masukan remeh bisa membanjiri metrik error server.
+- Nilai yang dipakai adalah yang PERTAMA (first-wins) pada kasus (b): token
+  valid di posisi pertama lolos pemeriksaan, lalu request tetap berakhir 500
+  karena duplikatnya. Pada kasus (c) token valid di posisi kedua juga 500,
+  sehingga tidak ada jalur "token di posisi berapa pun diterima".
+
+TIDAK TERBUKTI (jangan diklaim):
+- Tidak ada bypass CSRF. Semua varian tanpa token valid tetap ditolak.
+- Tidak ada jalur di mana nilai pertama sampah + nilai kedua valid diterima.
+  Itu yang saya duga di awal; pengujian membantahnya.
+
+## Nilai praktis
+
+Kontrol keamanan di depan aplikasi (WAF, reverse proxy rules) yang memeriksa
+kemunculan pertama `_csrf` akan melihat nilai yang berbeda dari yang dipakai
+aplikasi. Ini adalah kelas bug layer-diff, bukan bypass penuh. Diperkuat oleh
+temuan #11: ada 3 lapisan (openresty -> framework -> authz) yang bisa berbeda
+tafsir atas parameter yang sama.

@@ -1,0 +1,57 @@
+# F3 - Kegagalan CSRF dibalas HTTP 500, bukan 419
+
+## tanpa _csrf
+```
+POST /profile/name HTTP/1.1
+Host: diksy.ilkom.unej.ac.id
+Content-Length: 6
+
+name=x
+```
+HTTP/1.1 500
+Content-Type: text/html; charset=utf-8
+Body:  Sesi kedaluwarsa | bLecturer &lt;/&gt; bLecturer Tech Sandbox Academic Lab Office Hours D
+
+## _csrf kosong
+```
+POST /profile/name HTTP/1.1
+Host: diksy.ilkom.unej.ac.id
+Content-Length: 13
+
+_csrf=&name=x
+```
+HTTP/1.1 500
+Content-Type: text/html; charset=utf-8
+Body:  Sesi kedaluwarsa | bLecturer &lt;/&gt; bLecturer Tech Sandbox Academic Lab Office Hours D
+
+## _csrf acak 64 hex
+```
+POST /profile/name HTTP/1.1
+Host: diksy.ilkom.unej.ac.id
+Content-Length: 77
+
+_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=x
+```
+HTTP/1.1 500
+Content-Type: text/html; charset=utf-8
+Body:  Sesi kedaluwarsa | bLecturer &lt;/&gt; bLecturer Tech Sandbox Academic Lab Office Hours D
+
+## /login tanpa _csrf (anonim)
+```
+POST /login HTTP/1.1
+Host: diksy.ilkom.unej.ac.id
+Content-Length: 29
+
+email=[EMAIL]&password=x
+```
+HTTP/1.1 500
+
+## /register tanpa _csrf (anonim)
+```
+POST /register HTTP/1.1
+Host: diksy.ilkom.unej.ac.id
+Content-Length: 29
+
+email=[EMAIL]&password=x
+```
+HTTP/1.1 500
