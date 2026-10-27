@@ -28,6 +28,8 @@ Pengujian dilakukan dengan izin pemilik akun, pada 27 Oktober 2026.
 | 10 | Parameter `_csrf` ganda (HPP) diterima → HTTP 500, bukan 400/419 | **Medium** | Terkonfirmasi |
 | 11 | Kuota login ~10 percobaan per IP, tanpa header `Retry-After` | **Low** | Terkonfirmasi |
 | 12 | 2FA dapat diaktifkan tanpa konfirmasi password (kunci pemilik keluar) | **High** | Terkonfirmasi |
+| 13 | Registrasi menerima password 8 karakter & password ada di daftar-larang | **Medium** | Terkonfirmasi |
+| 14 | Setiap GET anonim membuat sesi baru, tanpa batas laju | **Low** | Terkonfirmasi |
 
 Tidak ditemukan: RCE, SQL injection, IDOR, auth bypass, XSS, CSRF bypass,
 session fixation, path traversal, request smuggling, cache poisoning, race
@@ -37,6 +39,11 @@ confusion, excessive data exposure, web cache deception, host header injection.
 **Catatan: F10 adalah perluasan dari F3.** Keduanya punya akar yang sama —
 framework tidak membedakan "token tidak valid" dari "permintaan rusak" dan
 membalas keduanya dengan 500. Perbaikan F3 sekaligus menutup sebagian F10.
+
+**F13 dan F14 punya pola yang sama dengan F12:** kontrolnya ada di framework,
+tetapi dilepas atau dilonggarkan di deployment. Ketiganya ditemukan dengan
+membandingkan source `bFramework` terhadap perilaku target yang hidup — bukan
+dengan menebak dari luar.
 
 ---
 
@@ -525,6 +532,102 @@ berubah.
 
 ---
 
+## 13. Registrasi menerima password 8 karakter & password ada di daftar-larang — Medium
+
+Form registrasi menyatakan `minlength="8"`, dan server benar-benar menerimanya.
+Yang lebih penting: server menerima sandi yang **framework sendiri sudah
+masukkan ke daftar-larang**.
+
+```
+$ pw='password'    POST /register -> 302  Location: /email/verify   (DITERIMA)
+$ pw='12345678'    POST /register -> 302  Location: /email/verify   (DITERIMA)
+$ pw='abcdefgh'    POST /register -> 302  Location: /email/verify   (DITERIMA)
+$ pw='abcde'       POST /register -> 302  Location: /register       (ditolak, 5 char)
+$ pw='abc'         POST /register -> 302  Location: /register       (ditolak, 3 char)
+```
+
+**Pembanding dengan framework aslinya.** `bFramework` menetapkan batas 10 dan
+sebuah daftar-larang yang memuat `password` dan `12345678`:
+
+```php
+// src/app/core/Auth/PasswordPolicy.php
+public const MIN_LENGTH = 10;
+private const COMMON = ['password', 'password1', ..., '12345678', '123456789', ...];
+```
+
+`PasswordPolicy::check()` juga memakai parameter `$email` untuk menolak sandi
+yang memuat email/NIM — di target parameter itu tidak berpengaruh.
+
+**Dampak.** Akun memakai email kampus permanen dan NIM sebagai identitas
+akademik; ini bukan akun sekali pakai. Registrasi menerima akun sebelum email
+diverifikasi (F7), tidak ada alur reset password (F8), dan 2FA tidak wajib —
+bahkan bisa dipasang pihak lain (F12). Digabung dengan enumerasi email/NIM
+(F6) dan kuota login ~10/menit/IP (F11), tebakan pertama yang wajar bagi
+penyerang adalah sandi umum — yang justru diterima.
+
+**Yang TIDAK terbukti.** Batas bawah tepat 6–7 karakter tidak dapat dipastikan:
+kuota registrasi per-IP (429) menutup bucket sebelum uji selesai. Yang terbukti
+hanya 8 diterima dan 5 ditolak. Tidak ada percobaan login ke akun orang lain.
+
+**Bukti:** `evidence/f13_password_policy_8char.txt`
+
+**Perbaikan.** Panggil validator framework (`PasswordPolicy::check`) di jalur
+registrasi, jangan hanya mengandalkan atribut `minlength` di HTML. Satu guard
+di handler, bukan di template.
+
+---
+
+## 14. Setiap GET anonim membuat sesi baru, tanpa batas laju — Low
+
+Tidak perlu akun, token, atau rute valid. Setiap GET anonim menerima
+`BLSESSID` baru, termasuk untuk URL yang tidak ada:
+
+```
+$ curl -D - -o /dev/null https://TARGET/definitely-not-a-page-<rand>
+HTTP/1.1 404 Not Found
+Set-Cookie: BLSESSID=<redacted>; path=/; secure; HttpOnly; SameSite=Lax
+```
+
+10 permintaan berurutan → 10 ID berbeda. Tanpa pembatas laju:
+
+```
+300 GET anonim, concurrency 20  ->  17,85 s, 16,8 req/s, 300x 200, 0x 429
+240 GET berurutan               ->  140 s,   240 sesi baru,  0x 429
+ 60 GET /login                  ->   60x 200, 60 sesi baru,  0x 429
+```
+
+**Pembanding dengan framework aslinya.** Framework sudah menandai ini
+**terbuka** di `docs/security-report.md` (S7): *"Banjir GET anonim → satu
+`sess_*` per request"*. Mitigasi yang ada — `anonEmptyTtl` 300 s,
+`anonCsrfTtl` 2700 s, gc probabilistik 1% — tertinggal jauh di belakang laju
+pembuatan. Pada 16,8 sesi/detik, gc 1% tidak mengejar.
+
+Satu beda yang mencolok: framework mensyaratkan ID sesi **64 hex**
+(`FileSessionStore::ID_RE`), target mengirim **32 hex**. Loader framework akan
+menolak cookie 32 hex dan selalu membuat sesi baru — jadi lapisan sesi di
+deployment bukan `FileSessionStore` apa adanya.
+
+**Dampak.** Satu berkas per sesi; ~60.000/jam pada laju terukur. Ini **bukan**
+DoS yang menjatuhkan layanan — pengujian tidak diarahkan ke kehabisan sumber
+daya dan 300 permintaan bukan tekanan berarti. Yang dilaporkan adalah tidak
+adanya batas, bukan terbukti menyebabkan down. Banjir log/disk juga menyulitkan
+analisis insiden (bandingkan F9).
+
+**Yang TIDAK terbukti.** Tidak diuji sampai kehabisan disk/inode — itu merusak
+layanan kampus dan di luar izin yang wajar. Jumlah berkas sesi di server tidak
+bisa dihitung dari luar; kesimpulan "menumpuk" berasal dari laju + TTL + gc 1%
+di source, bukan pengamatan filesystem. TTL 300/2700 s adalah nilai framework;
+nilai deployment tidak diketahui.
+
+**Bukti:** `evidence/f14_anon_session_flood.txt`
+
+**Perbaikan.** Sesi malas (buat hanya saat benar-benar ditulis), atau naikkan
+peluang gc ke 100% dengan interval berbasis waktu, atau batasi laju GET anonim
+per IP. Idempoten untuk GET yang tidak menyentuh sesi: jangan terbitkan cookie
+sampai ada sesuatu untuk disimpan.
+
+---
+
 ## Area yang diuji dan bersih
 
 Kejujuran laporan sama pentingnya dengan temuannya. Berikut yang **diuji dan
@@ -557,13 +660,22 @@ tidak ditemukan masalah**:
 ## Urutan prioritas perbaikan
 
 1. **Tutup port 8080 dari internet** — atau pasang TLS + batasi akses. Ini satu-satunya temuan yang langsung memberi jalan masuk ke infrastruktur.
-2. **Perbaiki CORS di Termix** — allowlist origin eksplisit, tolak `null`, hapus `x-admin-target-user` bila tak dipakai.
-3. **Perbaiki status CSRF** — satu perubahan di `Kernel::guard()`, memperbaiki semua endpoint sekaligus dan mengembalikan penanganan sesi kedaluwarsa di frontend.
-4. **Kunci `TRUSTED_PROXIES`** dan paksa `secure` pada cookie tanpa syarat.
-5. **Perbaiki redirect `/assets`** agar tidak menurunkan skema dan tidak membocorkan port internal.
-6. **Samakan pesan registrasi** dan pindahkan pembuatan user ke setelah verifikasi email.
-7. **Tambahkan alur reset password.**
-8. **Dedup header keamanan** di satu lapis saja.
+2. **Wajibkan password pada `POST /profile/2fa/enable`** — F12, satu guard di handler, memulihkan simetri dengan `disable`.
+3. **Perbaiki CORS di Termix** — allowlist origin eksplisit, tolak `null`, hapus `x-admin-target-user` bila tak dipakai.
+4. **Perbaiki status CSRF** — satu perubahan di `Kernel::guard()`, memperbaiki semua endpoint sekaligus dan mengembalikan penanganan sesi kedaluwarsa di frontend.
+5. **Panggil `PasswordPolicy` di jalur registrasi** — F13, mengembalikan batas 10 karakter + daftar-larang yang sudah ada di framework.
+6. **Kunci `TRUSTED_PROXIES`** dan paksa `secure` pada cookie tanpa syarat.
+7. **Perbaiki redirect `/assets`** agar tidak menurunkan skema dan tidak membocorkan port internal.
+8. **Samakan pesan registrasi** dan pindahkan pembuatan user ke setelah verifikasi email.
+9. **Tambahkan alur reset password.**
+10. **Buat sesi malas / batasi GET anonim** — F14, jangan terbitkan cookie sebelum ada yang perlu disimpan.
+11. **Dedup header keamanan** di satu lapis saja.
+
+Pola yang muncul di F12, F13, dan F14: deployment memakai `bFramework` tetapi
+melepas sebagian kontrol yang sudah ada di framework. Sebelum menulis mitigasi
+baru, periksa dulu apakah `PasswordPolicy`, `twofaBegin`/`twofaConfirm`, dan
+`sess_*` gc di source sudah melakukan hal yang dimaksud — memulihkannya lebih
+murah daripada membangun ulang.
 
 ---
 
@@ -572,7 +684,7 @@ tidak ditemukan masalah**:
 ```
 .
 ├── README.md                      laporan ini
-├── reproduce.sh                   reproduksi temuan #1–#5, #8–#12 (anonim; F12 perlu SID)
+├── reproduce.sh                   reproduksi temuan #1–#5, #8–#14 (anonim; F12 perlu SID)
 └── evidence/
     ├── f1_8080_http_headers.txt   header port 8080 (200, nginx, tanpa TLS)
     ├── f1_8080_manifest.txt       manifest.json → "Termix"
@@ -590,6 +702,8 @@ tidak ditemukan masalah**:
     ├── f10_hpp_csrf.txt           _csrf ganda → 500; bypass posisional TIDAK terbukti
     ├── f13_rate_limit.txt         limiter per-IP ~10 percobaan, tanpa Retry-After
     ├── f12_2fa_enable_no_password.txt  2FA aktif tanpa password; disable tetap minta password
+    ├── f13_password_policy_8char.txt   registrasi terima 8 char + sandi daftar-larang
+    ├── f14_anon_session_flood.txt      tiap GET anonim = sesi baru, tanpa batas laju
     ├── n_csrf_cross_session.txt   token lintas sesi ditolak (uji negatif)
     ├── n_negative_surface.txt     ekonomi koin, envelope API JSON, jalur Termix
     ├── quests_before.html         snapshot Quest Board sebelum pengujian (data disamarkan)

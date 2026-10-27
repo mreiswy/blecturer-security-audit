@@ -1,0 +1,103 @@
+# F14 — Setiap GET anonim membuat sesi baru; tidak ada batas laju
+# target : https://diksy.ilkom.unej.ac.id
+# tanggal: 2026-10-27
+# rahasia: semua nilai BLSESSID di berkas ini disamarkan
+
+## 1. Satu permintaan = satu sesi baru
+
+Setiap GET anonim ke `/` mengirim `Set-Cookie: BLSESSID=<32 hex>` yang berbeda.
+10 permintaan berurutan -> 10 cookie berbeda (tidak ada yang dipakai ulang):
+
+$ for i in $(seq 1 10); do curl -s -D - -o /dev/null https://TARGET/ ; done
+  req 1  -> Set-Cookie: BLSESSID=<redacted>   baru
+  req 2  -> Set-Cookie: BLSESSID=<redacted>   baru
+  ...
+  req 10 -> Set-Cookie: BLSESSID=<redacted>   baru
+  distinct = 10 / 10
+
+Cookie ini bukan pengulangan sesi lama: tanpa cookie, atau dengan cookie yang
+tidak dikenal, server selalu menerbitkan ID baru.
+
+## 2. Halaman 404 pun membuat sesi
+
+$ curl -s -D - -o /dev/null https://TARGET/definitely-not-a-page-<rand>
+HTTP/1.1 404 Not Found
+Set-Cookie: BLSESSID=<redacted>; path=/; secure; HttpOnly; SameSite=Lax
+
+Artinya penyerang tidak perlu menebak rute yang valid: URL acak sudah cukup
+untuk memaksa satu berkas sesi baru di server.
+
+## 3. Tidak ada pembatas laju, dan biayanya rendah
+
+300 GET anonim, concurrency 20:
+
+  elapsed = 17,85 s
+  throughput = 16,8 req/s
+  200 = 300
+  429 = 0
+  sesi baru = 300
+
+Run lebih lambat (240 permintaan berurutan, 1 koneksi): 140 s, 240 sesi baru,
+429 = 0. Tidak ada 429 sama sekali di seluruh percobaan.
+
+GET `/login` juga membuat sesi (berisi token CSRF) dan juga tanpa batas:
+60 permintaan -> 60 respons 200, 60 BLSESSID berbeda, 0 x 429.
+
+## 4. Pembanding dengan framework aslinya (bFramework)
+
+Framework sudah menyadari masalah ini dan menandainya **terbuka** di
+`docs/security-report.md` (S7):
+
+    | S7 | A04 | SEC-SESS-01 | Core/CsrfMiddleware.php:28;
+      Core/FileSessionStore.php:64-83,184-191 | rendah | Banjir GET anonim ->
+      satu sess_* per request | Sesi malas / gc umur pendek untuk sesi kosong | M7/M2 | terbuka |
+
+Mitigasi yang SUDAH ada di framework, tetapi tidak menolong di sini:
+
+    // FileSessionStore.php
+    private const ID_RE = '/^[a-f0-9]{64}$/D';      // 64 hex
+    private readonly int $anonEmptyTtl = 300;       // sesi kosong: gc 5 menit
+    private readonly int $anonCsrfTtl  = 2700;      // sesi hanya-CSRF: gc 45 menit
+
+    // SessionMiddleware.php — gc probabilistik 1%
+    if ($this->gc !== null && ($this->dice)() === 1) { ($this->gc)(); }
+
+Dua hal yang berbeda di deployment:
+
+1. **Panjang ID sesi.** Target mengirim 32 hex; framework mensyaratkan 64 hex
+   (`ID_RE`). Loader framework akan menolak cookie 32 hex dan selalu membuat
+   sesi baru — jadi lapisan sesi di target bukan `FileSessionStore` apa adanya.
+2. **gc 1% + TTL 300/2700 detik** berarti pembersihan tertinggal jauh di
+   belakang laju pembuatan. Pada 16,8 sesi/detik, satu persen gc tidak akan
+   mengejar; berkas sesi menumpuk sampai TTL habis.
+
+Homepage dan halaman 404 tidak memuat `_csrf` (0 kemunculan), `/login` memuat 1.
+Jadi sesi dari `/` dan dari 404 masuk kategori "kosong" (TTL 300 s), sedangkan
+sesi dari `/login` masuk "hanya-CSRF" (TTL 2700 s) — jalur termahal bagi
+penyerang adalah `/login`, dan justru jalur itu tidak dibatasi.
+
+## 5. Dampak
+
+- **Disk / inode.** Satu berkas per sesi; 16,8/detik = ~60.000/jam. Bertahan
+  45 menit pada jalur `/login` dan 5 menit pada `/`, tetapi laju masuk jauh
+  melampaui laju gc.
+- **Amplifikasi tanpa autentikasi.** Tidak perlu akun, tidak perlu token, tidak
+  perlu CSRF. URL acak cukup.
+- **Menutupi serangan lain.** Log/disk yang banjir membuat analisis insiden
+  lebih sulit (bandingkan F9: rotasi log).
+
+Ini **bukan** DoS yang menjatuhkan layanan — pengujian tidak mengarah ke
+kehabisan sumber daya, dan 300 permintaan bukan tekanan berarti. Yang dilaporkan
+adalah tidak adanya batas, bukan terbukti menyebabkan down.
+
+## 6. Batasan pengujian (jujur)
+
+- Tidak diuji sampai kehabisan disk/inode; itu akan merusak layanan kampus dan
+  di luar izin yang wajar.
+- Jumlah berkas sesi di server tidak bisa dihitung dari luar; kesimpulan
+  "menumpuk" berasal dari laju pembuatan + TTL + gc 1% di source, bukan dari
+  pengamatan filesystem.
+- TTL 300/2700 detik adalah nilai framework; nilai deployment tidak diketahui.
+  Yang terukur hanyalah: tidak ada 429 dan setiap permintaan menerbitkan ID baru.
+- `HEAD /` tidak menerbitkan cookie (0 dari 1) — tidak disimpulkan apa pun dari
+  satu sampel ini.

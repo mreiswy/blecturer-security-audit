@@ -154,6 +154,51 @@ else
   echo "  SKIP: butuh BLSESSID milik sendiri (SID=... bash reproduce.sh)"
 fi
 
+hr "F13 Registrasi menerima password 8 karakter & sandi umum"
+# Sukses dan gagal sama-sama 302; yang membedakan adalah Location.
+# /email/verify = DITERIMA, /register = ditolak. Kuota registrasi per-IP kecil,
+# jadi 429 dilaporkan SKIP, bukan FAIL.
+RG="/register"
+try_pw() { # $1 = password -> cetak "<status> <location>"
+  T="$(curl -s -m 20 -c "./.jf13.$$" "$H$RG" | tr -d '\r' \
+        | grep -o 'name="_csrf" value="[a-f0-9]*"' | head -1 | sed 's/.*value="//;s/"//')"
+  [ -z "$T" ] && { echo "429 "; return; }
+  O="$(curl -s -m 20 -b "./.jf13.$$" -D - -o /dev/null -X POST \
+    --data-urlencode "_csrf=$T" --data-urlencode "name=Repro" \
+    --data-urlencode "nim=1$RANDOM$RANDOM" --data-urlencode "email=r$RANDOM$RANDOM@example.invalid" \
+    --data-urlencode "password=$1" --data-urlencode "password_confirmation=$1" "$H$RG" | tr -d '\r')"
+  printf '%s %s' \
+    "$(printf '%s' "$O" | grep -i '^HTTP/' | tail -1 | awk '{print $2}')" \
+    "$(printf '%s' "$O" | grep -i '^location:' | awk '{print $2}')"
+}
+A="$(try_pw 'password')"
+B="$(try_pw 'abcde')"
+rm -f "./.jf13.$$"
+case "$A" in
+  429*) echo "  SKIP: kuota registrasi per-IP aktif (429); ulangi setelah jendela habis";;
+  *"/email/verify") ok "sandi 'password' (8 char, ada di daftar-larang framework) DITERIMA";;
+  *) bad "sandi 'password' tidak diterima ($A) — mungkin sudah diperbaiki";;
+esac
+case "$B" in
+  429*) echo "  SKIP: kuota habis sebelum uji batas bawah";;
+  *"/register") ok "sandi 5 karakter ditolak (batas bawah server > 5)";;
+  *"/email/verify") bad "sandi 5 karakter DITERIMA — batas bawah lebih rendah lagi ($B)";;
+esac
+echo "  pembanding: framework mensyaratkan MIN_LENGTH=10 + daftar-larang COMMON"
+
+hr "F14 Setiap GET anonim membuat sesi baru, tanpa batas laju"
+G="$(curl -s -m 20 -D - -o /dev/null "$H/")"
+expect "GET / menerbitkan BLSESSID" "$G" "Set-Cookie: BLSESSID="
+N="$(curl -s -m 20 -D - -o /dev/null "$H/no-such-page-$RANDOM")"
+expect "halaman 404 pun menerbitkan BLSESSID" "$N" "Set-Cookie: BLSESSID="
+D1="$(curl -s -m 15 -D - -o /dev/null "$H/" | tr -d '\r' | grep -i '^set-cookie: BLSESSID' | sed 's/.*BLSESSID=\([^;]*\).*/\1/')"
+D2="$(curl -s -m 15 -D - -o /dev/null "$H/" | tr -d '\r' | grep -i '^set-cookie: BLSESSID' | sed 's/.*BLSESSID=\([^;]*\).*/\1/')"
+if [ -n "$D1" ] && [ -n "$D2" ] && [ "$D1" != "$D2" ]; then ok "dua GET berurutan -> dua ID sesi berbeda"
+else bad "ID sesi dipakai ulang (atau kosong)"; fi
+CODES="$(for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 15 -o /dev/null -w '%{http_code} ' "$H/"; done)"
+expect "10 GET anonim tanpa 429" "$CODES" "200"
+case "$CODES" in *429*) bad "429 muncul pada GET anonim (limiter sudah dipasang?)";; *) ok "tidak ada 429 pada GET anonim";; esac
+
 printf '\n\033[1m== Ringkasan\033[0m\n'
 printf '  PASS: %d\n  FAIL: %d\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] && printf '\n  Semua temuan tereproduksi.\n' || printf '\n  Ada yang gagal — server mungkin sudah diperbaiki.\n'
