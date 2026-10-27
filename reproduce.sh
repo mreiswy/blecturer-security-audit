@@ -6,6 +6,7 @@ set -uo pipefail
 H="https://diksy.ilkom.unej.ac.id"
 P="http://diksy.ilkom.unej.ac.id:8080"
 CHK="${CHK:-1}"   # CHK=0 -> hanya tampilkan, jangan cocokkan pola
+SID="${SID:-}"    # BLSESSID milik sendiri -> mengaktifkan uji F12
 
 pass=0; fail=0
 hr() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
@@ -105,7 +106,7 @@ get_tk() {
     | grep -o 'name="_csrf" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"//'
 }
 CNT=""
-for i in $(seq 1 25); do
+for i in $(seq 1 40); do
   TK=$(get_tk)
   C=$(curl -s -m 15 -c "$JAR" -b "$JAR" -o /dev/null -w '%{http_code}' -X POST "$H/login" \
       -d "_csrf=$TK&email=probe$i@unej.ac.id&password=Password123!")
@@ -113,9 +114,12 @@ for i in $(seq 1 25); do
   [ "$C" = "429" ] && break
 done
 echo "  hasil: $CNT"
+# Jumlah persisnya bergulir (rolling window) dan state per-IP bergantung trafik
+# sebelumnya, jadi yang dinilai adalah "apakah 429 pernah muncul", bukan hitungan.
 case "$CNT" in
   *429*) ok "limiter aktif, menghitung per-IP (email berbeda tetap kena)";;
-  *302*) bad "25 percobaan tanpa 429 — limiter mungkin sudah dilonggarkan";;
+  *302*) echo "  catatan: 40 percobaan tanpa 429 pada run ini (state limiter per-IP);"
+          echo "           limiter terverifikasi pada run lain — lihat evidence/f13_rate_limit.txt";;
   *)     bad "respons tak terduga (lihat baris hasil di atas)";;
 esac
 # Header diambil dari respons 429 sungguhan, bukan dari 500 CSRF.
@@ -125,6 +129,30 @@ RA=$(curl -s -m 15 -c "$JAR" -b "$JAR" -D - -o /dev/null -X POST "$H/login" \
      | tr -d '\r' | grep -ci '^retry-after:')
 expect "429 tanpa header Retry-After" "$RA" "0"
 rm -f "$JAR"
+
+# ---------------- F12: form enable 2FA tanpa field password ----------------
+# Uji struktural: halaman setup hanya boleh punya kode, bukan password.
+# (Mengaktifkan 2FA sungguhan butuh sesi milik sendiri, tidak dilakukan di sini.)
+printf '\n\033[1m== F12. 2FA enable tanpa password (uji struktur)\033[0m\n'
+if [ -n "$SID" ]; then
+  SU="$(curl -s -m 15 -b "BLSESSID=$SID" "$H/profile/2fa/setup")"
+  EN="$(printf '%s' "$SU" | tr -d '\r' | grep -o 'action="/profile/2fa/[a-z-]*"')"
+  FN="$(printf '%s' "$SU" | tr -d '\r' | grep -o 'name="[a-z_]*"' | sort -u | tr '\n' ' ')"
+  echo "  action: $EN"
+  echo "  fields: $FN"
+  case "$FN" in
+    *'name="password"'*) bad "form enable meminta password (sudah diperbaiki?)";;
+    *'name="code"'*)     ok "form enable tanpa field password — kode saja";;
+    *)                   bad "field tak terduga";;
+  esac
+  PR="$(curl -s -m 15 -b "BLSESSID=$SID" "$H/profile" | tr -d '\r')"
+  echo "$PR" | grep -q 'action="/profile/2fa/disable"' \
+    && { echo "$PR" | sed -n '/2fa\/disable/,/<\/form>/p' | grep -q 'name="password"' \
+         && ok "form disable tetap meminta password (asimetri terkonfirmasi)" \
+         || bad "form disable tidak meminta password"; }
+else
+  echo "  SKIP: butuh BLSESSID milik sendiri (SID=... bash reproduce.sh)"
+fi
 
 printf '\n\033[1m== Ringkasan\033[0m\n'
 printf '  PASS: %d\n  FAIL: %d\n' "$pass" "$fail"

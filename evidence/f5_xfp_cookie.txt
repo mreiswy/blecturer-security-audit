@@ -1,8 +1,8 @@
 === normal
 Strict-Transport-Security: max-age=31536000; includeSubDomains
 Strict-Transport-Security: max-age=31536000; includeSubDomains
-Set-Cookie: BLSESSID=[REDACTED]; path=/; secure; HttpOnly; SameSite=Lax
+Set-Cookie: BLSESSID=3f8ec9421569fefc91201691dbc24456; path=/; secure; HttpOnly; SameSite=Lax
 Vary: Accept-Encoding,X-Forwarded-Proto
 === X-Forwarded-Proto: http
-Set-Cookie: BLSESSID=[REDACTED]; path=/; HttpOnly; SameSite=Lax
+Set-Cookie: BLSESSID=4243b0aa59df87a64bad507e6043b090; path=/; HttpOnly; SameSite=Lax
 Vary: Accept-Encoding,X-Forwarded-Proto

@@ -27,11 +27,12 @@ Pengujian dilakukan dengan izin pemilik akun, pada 27 Oktober 2026.
 | 9 | Header keamanan terpasang ganda | **Info** | Terkonfirmasi |
 | 10 | Parameter `_csrf` ganda (HPP) diterima → HTTP 500, bukan 400/419 | **Medium** | Terkonfirmasi |
 | 11 | Kuota login ~10 percobaan per IP, tanpa header `Retry-After` | **Low** | Terkonfirmasi |
+| 12 | 2FA dapat diaktifkan tanpa konfirmasi password (kunci pemilik keluar) | **High** | Terkonfirmasi |
 
 Tidak ditemukan: RCE, SQL injection, IDOR, auth bypass, XSS, CSRF bypass,
 session fixation, path traversal, request smuggling, cache poisoning, race
 condition pada rate limiter, BFLA, mass assignment, SSRF, JWT/algorithm
-confusion, excessive data exposure.
+confusion, excessive data exposure, web cache deception, host header injection.
 
 **Catatan: F10 adalah perluasan dari F3.** Keduanya punya akar yang sama —
 framework tidak membedakan "token tidak valid" dari "permintaan rusak" dan
@@ -454,6 +455,76 @@ kampus, supaya satu laboratorium tidak saling mengunci.
 
 ---
 
+## 12. 2FA dapat diaktifkan tanpa konfirmasi password — High
+
+Form aktivasi 2FA tidak meminta password sama sekali, padahal form
+menonaktifkannya meminta. Asimetri ini membuat penyerang yang memegang cookie
+sesi bisa memasang authenticator miliknya sendiri lalu mengunci pemilik akun.
+
+**Bukti struktur** — dua form, dua syarat berbeda:
+
+```
+GET /profile/2fa/setup   -> <form action="/profile/2fa/enable">
+     fields: _csrf, code                       (tidak ada password)
+GET /profile (2FA aktif) -> <form action="/profile/2fa/disable">
+     fields: _csrf, password, code             (password + kode lama wajib)
+```
+
+**Bukti perilaku** — aktivasi berhasil dengan dua field saja:
+
+```
+POST /profile/2fa/enable   _csrf=<token sesi>&code=<6 digit dari seed halaman setup>
+  -> 302  Location: /profile
+
+GET /profile  sesudahnya -> form "Nonaktifkan 2FA" + action="/profile/2fa/backup-codes"
+GET /profile  sebelumnya -> "Aktifkan 2FA"
+```
+
+**Pembanding dengan framework aslinya.** `bFramework` mewajibkan password di
+kedua arah:
+
+```php
+// src/app/core/Auth/LocalDriver.php
+twofaBegin()   -> verifyPassword($acc, $r->post['password'])   sebelum begin()
+twofaConfirm() -> verifyPassword() lagi  // "S4: secret tertunda hanya ditampilkan
+                                         //  setelah password valid"
+twofaDisable() -> verifyPassword() + twofa->verifyLogin()
+```
+
+bLecturer mempertahankan syarat itu pada `disable` tetapi menghapusnya pada
+`enable`. Jadi yang hilang bukan sebuah fitur, melainkan satu lapisan dari
+kontrol yang seharusnya simetris.
+
+**Rantai dampak** (semuanya terverifikasi, bukan skenario):
+
+1. Penyerang memegang `BLSESSID` — dari XSS di origin yang sama, perangkat
+   bersama, atau sesi yang tidak dirotasi saat login.
+2. `POST /profile/2fa/enable` dengan seed milik penyerang → `302 /profile`,
+   `totp_enabled=1`.
+3. Pemilik login dengan password benar → **`302 /login/2fa`**, bukan
+   `/dashboard`. Login benar-benar tertahan, dan pemilik tidak punya kode.
+4. Pemilik tidak bisa mematikan 2FA: form `disable` menuntut password **dan**
+   kode TOTP yang hanya penyerang punya.
+
+Hasilnya pengambilalihan permanen dari satu cookie, tanpa penyerang pernah
+mengetahui password. Berbeda dari pencurian sesi biasa, pemilik tidak bisa
+memulihkan akunnya sendiri lewat aplikasi.
+
+**Yang TIDAK terbukti.** Bukan CSRF murni: form membawa `_csrf`, dan permintaan
+tanpa token berakhir `500` (lihat #3 dan #10). Rotasi secret saat
+`/profile/2fa/setup` dipanggil ulang pada akun yang 2FA-nya sudah aktif tidak
+diuji — akun uji berhenti di gerbang `/email/verify`. Bukan bypass 2FA saat
+login: login memang menuntut kode.
+
+**Bukti:** `evidence/f12_2fa_enable_no_password.txt`
+
+**Perbaikan.** Wajibkan password (atau re-autentikasi segar) di handler
+`enable` sebelum menyimpan secret, sama seperti `twofaBegin`/`twofaConfirm`.
+Satu guard di titik tulis, bukan di view. Rotasi sesi setelah status 2FA
+berubah.
+
+---
+
 ## Area yang diuji dan bersih
 
 Kejujuran laporan sama pentingnya dengan temuannya. Berikut yang **diuji dan
@@ -501,7 +572,7 @@ tidak ditemukan masalah**:
 ```
 .
 ├── README.md                      laporan ini
-├── reproduce.sh                   reproduksi temuan #1–#5, #8–#11 (anonim, tanpa kredensial)
+├── reproduce.sh                   reproduksi temuan #1–#5, #8–#12 (anonim; F12 perlu SID)
 └── evidence/
     ├── f1_8080_http_headers.txt   header port 8080 (200, nginx, tanpa TLS)
     ├── f1_8080_manifest.txt       manifest.json → "Termix"
@@ -518,6 +589,7 @@ tidak ditemukan masalah**:
     ├── f8_no_reset.txt            semua path reset password → 404
     ├── f10_hpp_csrf.txt           _csrf ganda → 500; bypass posisional TIDAK terbukti
     ├── f13_rate_limit.txt         limiter per-IP ~10 percobaan, tanpa Retry-After
+    ├── f12_2fa_enable_no_password.txt  2FA aktif tanpa password; disable tetap minta password
     ├── n_csrf_cross_session.txt   token lintas sesi ditolak (uji negatif)
     ├── n_negative_surface.txt     ekonomi koin, envelope API JSON, jalur Termix
     ├── quests_before.html         snapshot Quest Board sebelum pengujian (data disamarkan)
@@ -542,6 +614,10 @@ tidak ditemukan masalah**:
 - Temuan #11 mengirim beberapa percobaan login dengan email karangan
   (`probe1@unej.ac.id` dan sejenisnya) dan password salah. Tidak ada akun
   nyata yang dicoba, dan tidak ada kredensial yang ditebak.
+- Temuan #12 diuji pada akun milik penguji sendiri. Selama pengujian, 2FA
+  sempat aktif tanpa sengaja pada akun pemilik; statusnya sudah dikembalikan
+  (`totp_enabled=0`) dan login kembali normal. Tidak ada akun pihak ketiga
+  yang disentuh, dan seed TOTP yang dipakai tidak dimuat di repo ini.
 
 ---
 
