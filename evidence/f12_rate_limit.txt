@@ -1,4 +1,4 @@
-# F13 - Rate limiter login: per-IP (~10 percobaan), tanpa Retry-After
+# F12 - Rate limiter login: per-IP (~10 percobaan), tanpa Retry-After
 
 Diuji anonim dari satu IP, tanpa kredensial valid.
 

@@ -1,4 +1,4 @@
-# F10 - Parameter _csrf ganda (HTTP Parameter Pollution)
+# F5 - Parameter _csrf ganda (HTTP Parameter Pollution)
 
 Diuji pada sesi terautentikasi milik pemilik akun (cookie [REDACTED]).
 Nama profil diubah sementara lalu DIKEMBALIKAN ke nilai aslinya.

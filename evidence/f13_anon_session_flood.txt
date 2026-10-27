@@ -1,4 +1,4 @@
-# F14 — Setiap GET anonim membuat sesi baru; tidak ada batas laju
+# F13 — Setiap GET anonim membuat sesi baru; tidak ada batas laju
 # target : https://diksy.ilkom.unej.ac.id
 # tanggal: 2026-10-27
 # rahasia: semua nilai BLSESSID di berkas ini disamarkan
@@ -84,7 +84,7 @@ penyerang adalah `/login`, dan justru jalur itu tidak dibatasi.
 - **Amplifikasi tanpa autentikasi.** Tidak perlu akun, tidak perlu token, tidak
   perlu CSRF. URL acak cukup.
 - **Menutupi serangan lain.** Log/disk yang banjir membuat analisis insiden
-  lebih sulit (bandingkan F9: rotasi log).
+  lebih sulit (bandingkan F13: rotasi log).
 
 Ini **bukan** DoS yang menjatuhkan layanan — pengujian tidak mengarah ke
 kehabisan sumber daya, dan 300 permintaan bukan tekanan berarti. Yang dilaporkan
