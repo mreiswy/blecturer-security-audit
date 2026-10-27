@@ -1,0 +1,16 @@
+GET /uploads
+HTTP/1.1 301 Moved Permanently
+Location: http://diksy.ilkom.unej.ac.id:8080/uploads/
+
+GET /assets
+HTTP/1.1 301 Moved Permanently
+Location: http://diksy.ilkom.unej.ac.id:8080/assets/
+
+GET /assets/js
+HTTP/1.1 301 Moved Permanently
+Location: http://diksy.ilkom.unej.ac.id:8080/assets/js/
+
+GET /assets/css
+HTTP/1.1 301 Moved Permanently
+Location: http://diksy.ilkom.unej.ac.id:8080/assets/css/
+

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="[REDACTED_CSRF]">
+  <title>Quest Board | bLecturer</title>
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="min-h-screen">
+<div class="min-h-screen lg:flex">
+  <div id="scrim" class="fixed inset-0 bg-ink/30 z-30 hidden lg:hidden"></div>
+  <aside id="sidebar" class="fixed lg:sticky top-0 left-0 z-40 h-screen w-64 shrink-0 bg-white/95 lg:bg-white/60 border-r border-lavender/60 p-4 flex flex-col -translate-x-full lg:translate-x-0 transition-transform overflow-y-auto">
+  <a href="/" class="flex items-center gap-2 px-2 py-3 font-mono font-bold text-lg"><span class="bg-pastel-blue rounded-lg px-2 py-0.5">&lt;/&gt;</span>bLecturer</a>
+  <nav class="mt-4 flex flex-col gap-1" aria-label="Menu utama">
+    <a href="/dashboard" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Dasbor</a>
+    <a href="/courses" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5M9 7h6"/></svg>Mata Kuliah Saya</a>
+    <a href="/quests" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium bg-pastel-blue text-ink" aria-current="page"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg>Quest Board</a>
+    <a href="/bug-bounty" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7a3 3 0 0 1 6 0v1H9zM7 10h10v4a5 5 0 0 1-10 0zM12 10v9M3 12h4M17 12h4M4 7l3 2M20 7l-3 2"/></svg>Bug Bounty</a>
+    <a href="/leaderboard" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>Leaderboard</a>
+    <a href="/marketplace" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7h12l1 13H5zM9 7a3 3 0 0 1 6 0"/></svg>Marketplace</a>
+    <a href="/profile" class="flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-ink-muted hover:bg-lavender/40"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Profil</a>
+  </nav>
+  <form method="post" action="/logout" class="mt-auto pt-4">
+    <input type="hidden" name="_csrf" value="[REDACTED_CSRF]">    <button type="submit" class="w-full flex items-center gap-3 rounded-xl px-3 min-h-11 font-medium text-danger hover:bg-red-50 cursor-pointer"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>Keluar</button>
+  </form>
+</aside>
+  <div class="flex-1 min-w-0 flex flex-col">
+    <header class="sticky top-0 z-20 bg-cream/90 backdrop-blur border-b border-lavender/60 px-4 md:px-8 py-3 flex items-center gap-3">
+  <button id="burger" type="button" class="lg:hidden btn bg-white border border-lavender px-3!" aria-label="Buka menu" aria-controls="sidebar" aria-expanded="false">&#9776;</button>
+  <div class="min-w-0 mr-auto">
+    <div class="font-semibold truncate">[NAMA_MAHASISWA]</div>
+    <div class="text-xs text-ink-muted truncate">NIM <span class="stat">[NIM]</span></div>
+  </div>
+  <div class="min-w-24 sm:min-w-44 md:min-w-64">
+    <div class="flex justify-between text-xs"><span class="font-semibold">Intern</span><span class="stat text-ink-muted"><span class="sm:hidden">0</span><span class="hidden sm:inline">0 EXP / Junior Dev</span></span></div>
+    <div class="h-2.5 rounded-full bg-lavender/60 overflow-hidden mt-1" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progres EXP"><div class="h-full bg-pastel-green rounded-full" data-pct="0"></div></div>
+    <div class="text-[11px] text-ink-muted mt-0.5 truncate"><span class="sm:hidden">500 EXP lagi</span><span class="hidden sm:inline">500 EXP lagi ke Junior Dev</span></div>
+  </div>
+  <div class="chip bg-pastel-yellow text-sm! px-3! py-1.5!" title="Koin"><span aria-hidden="true">&#9679;</span>&nbsp;<span class="stat font-semibold" data-coins>0</span>&nbsp;koin</div>
+</header>
+    <main class="p-4 md:p-8 max-w-6xl w-full mx-auto" id="main">
+            <div class="mb-5">
+  <h1 class="text-2xl font-bold">Quest Board</h1>
+  <p class="text-ink-muted text-sm">Kerjakan quest, kirim URL hasilnya, dan tunggu review dosen. Menemukan bug? <a class="underline text-blue-ink" href="/bug-bounty">Ajukan Bug Bounty</a>.</p>
+</div>
+<div class="grid gap-5 lg:grid-cols-2" id="board">
+  <section aria-label="Main Quest">
+    <div class="rounded-xl bg-pastel-blue px-4 py-2 font-semibold flex justify-between mb-1"><span>Main Quest</span><span class="stat">1</span></div>
+    <p class="text-xs text-ink-muted mb-3">Dari mata kuliah yang kamu ikuti.</p>
+    <div class="space-y-4">
+      <article class="bento-card !p-4 ">
+        <span class="chip bg-lavender/60 mb-2">KST1316 Dasar-dasar Keamanan Informasi</span>
+        <div class="flex justify-between gap-2 items-start"><h3 class="font-semibold leading-snug">The AI&#039;s Blind Spot (Authorization &amp; RBAC)</h3><span class="chip bg-pastel-yellow">Menunggu review</span></div>
+        <div class="prose-md text-sm text-ink-muted mt-1"><p><strong>Skenario: &quot;Project Aegis&quot;</strong></p>
+<p>Selamat bergabung di tim konsultan keamanan &quot;Project Aegis&quot;, Agen! Universitas Jember sedang mengembangkan sistem akademik terpadu yang sangat rahasia. Sayangnya, vendor IT sebelumnya (yang ketahuan menggunakan AI untuk <em>generate</em> kode) meninggalkan prototipe <em>backend</em> yang rentan.</p>
+<p>Mereka menerapkan sistem otorisasi, tetapi AI membuat kesalahan fatal: desain Role-Based Access Control (RBAC) mereka berantakan. Akibatnya, ada celah di mana seorang <em>Dosen</em> bisa mendapatkan hak akses <em>Administrator</em>, atau lebih parah, <em>Mahasiswa</em> bisa mengakses <em>endpoint</em> untuk mengubah nilai.</p>
+<p><strong>Misi Anda (Authorization &amp; RBAC):</strong></p>
+<p>Vendor meninggalkan dokumentasi berupa file JSON berisi skema RBAC dan <em>Access Control List</em> (ACL). File dapat diunduh di <a href="https://drive.google.com/file/d/1EWyz2CSAoSAuoYHVb56nu_8OtOn39Kkj/view?usp=sharing" rel="nofollow noopener noreferrer" target="_blank">https://drive.google.com/file/d/1EWyz2CSAoSAuoYHVb56nu_8OtOn39Kkj/view?usp=sharing</a>.</p>
+<ol>
+<li><strong>Analisis Skema:</strong> Temukan minimal 2 (dua) <em>logic flaw</em> atau kelemahan otorisasi dalam skema RBAC/ACL tersebut. Mengapa desain ini berbahaya jika diterapkan?</li>
+<li><strong>Rancang Ulang:</strong> Perbaiki skema JSON tersebut menjadi desain RBAC yang mengimplementasikan prinsip <em>Least Privilege</em> dengan benar.</li>
+</ol>
+<p><strong>Cara Pengumpulan:</strong></p>
+<p>Anda bisa meminta AI untuk membuat skema RBAC, tapi AI tidak bisa berdebat.<br />
+Kirimkan bukti kerja Anda berupa <strong>Video Code/Architecture Review</strong> (maksimal 3 menit).</p>
+<ol>
+<li>Rekam layar Anda menggunakan Loom, OBS, atau Zoom.</li>
+<li>Tampilkan skema awal dan skema hasil perbaikan Anda di layar.</li>
+<li>Jelaskan secara lisan (presentasi) <em>di mana letak kesalahan</em> vendor sebelumnya dan <em>bagaimana desain Anda memperbaikinya</em>.</li>
+</ol>
+<p>Submit <em>link</em> video (YouTube Unlisted atau Google Drive dengan akses terbuka) melalui form di bawah ini!</p></div>
+        <div class="stat text-xs mt-3 flex flex-wrap gap-x-3 gap-y-1"><span>+100 EXP</span><span>+15 koin</span><span class="">Deadline: Tanpa deadline</span></div>
+        <div class="mt-3">
+          <span class="text-sm text-yellow-ink">Sedang direview</span>
+        </div>
+      </article>
+    </div>
+  </section>
+  <section aria-label="Side Quest">
+    <div class="rounded-xl bg-pastel-green px-4 py-2 font-semibold flex justify-between mb-1"><span>Side Quest</span><span class="stat">1</span></div>
+    <p class="text-xs text-ink-muted mb-3">Terbuka untuk semua mahasiswa.</p>
+    <div class="space-y-4">
+      <article class="bento-card !p-4 ">
+        <div class="flex justify-between gap-2 items-start"><h3 class="font-semibold leading-snug">Website Bug</h3><span class="chip">Belum dikerjakan</span></div>
+        <div class="prose-md text-sm text-ink-muted mt-1"><p>Bagi yang menemukan celah keamanan pada website ini, silahkan kirimkan ke email &quot;diksy@unej.ac.id&quot; dengan subyek &quot;website bug&quot;. Jika terbukti benar, poin akan dimasukkan ke akun Anda.</p></div>
+        <div class="stat text-xs mt-3 flex flex-wrap gap-x-3 gap-y-1"><span>+100 EXP</span><span>+20 koin</span><span class="">Deadline: Tanpa deadline</span></div>
+        <div class="mt-3">
+          <details data-quest="2" data-title="Website Bug" data-info="Hadiah: +100 EXP, +20 koin">
+            <summary class="btn-primary !min-h-10 !py-1.5 text-sm w-fit list-none">Kirim URL</summary>
+            <template data-desc><p>Bagi yang menemukan celah keamanan pada website ini, silahkan kirimkan ke email &quot;diksy@unej.ac.id&quot; dengan subyek &quot;website bug&quot;. Jika terbukti benar, poin akan dimasukkan ke akun Anda.</p></template>
+            <form method="post" action="/quests/2/submit" class="mt-3">
+              <input type="hidden" name="_csrf" value="[REDACTED_CSRF]">              <label class="label" for="url-2">URL pengerjaan</label>
+              <input class="input" id="url-2" name="submission_url" type="url" required maxlength="255" placeholder="https://github.com/kamu/proyek/pull/1" autocomplete="off">
+              <button class="btn-primary mt-2" type="submit">Kirim</button>
+            </form>
+          </details>
+        </div>
+      </article>
+    </div>
+  </section>
+</div>
+<dialog id="modal" class="bento-card w-full max-w-md !bg-white p-0 backdrop:bg-black/40" aria-labelledby="mTitle">
+  <form id="mForm" method="post" action="" class="p-6">
+    <input type="hidden" name="_csrf" value="[REDACTED_CSRF]">    <h2 id="mTitle" class="text-lg font-bold"></h2><p id="mInfo" class="text-sm text-ink-muted mt-1"></p>
+    <div id="mDesc" class="prose-md text-sm mt-3 max-h-48 overflow-y-auto" hidden></div>
+    <label class="label mt-4" for="mUrl">URL pengerjaan</label>
+    <input class="input" id="mUrl" name="submission_url" type="url" required maxlength="255" placeholder="https://github.com/kamu/proyek/pull/1" autocomplete="off">
+    <p id="mErr" class="text-sm text-danger mt-2" role="alert" hidden></p>
+    <div class="flex justify-end gap-2 mt-5"><button type="button" class="btn-ghost" id="mCancel">Batal</button><button class="btn-primary" id="mSend" type="submit">Kirim</button></div>
+  </form>
+</dialog>
+<script src="/assets/js/quests.js" defer></script>
+    </main>
+  </div>
+</div>
+<script src="/assets/js/layout.js" defer></script>
+</body>
+</html>

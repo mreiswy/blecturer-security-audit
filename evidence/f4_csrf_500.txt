@@ -1,0 +1,6 @@
+POST /login (tanpa _csrf)
+HTTP/1.1 500 Internal Server Error
+POST /register (tanpa _csrf)
+HTTP/1.1 500 Internal Server Error
+POST /email/verify/resend (tanpa _csrf)
+HTTP/1.1 500 Internal Server Error

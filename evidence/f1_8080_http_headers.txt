@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+Server: nginx
+Date: Tue, 27 Oct 2026 13:29:12 GMT
+Content-Type: text/html
+Content-Length: 3164
+Last-Modified: Sun, 23 Aug 2026 00:48:37 GMT
+Connection: keep-alive
+Vary: Accept-Encoding
+ETag: "6a8a4365-c5c"
+X-Content-Type-Options: nosniff
+Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+Accept-Ranges: bytes
+

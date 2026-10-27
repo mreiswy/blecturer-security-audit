@@ -1,0 +1,14 @@
+HTTP/1.1 401 Unauthorized
+Server: nginx
+Date: Tue, 27 Oct 2026 13:29:29 GMT
+Content-Type: application/json; charset=utf-8
+Content-Length: 40
+Connection: keep-alive
+X-Powered-By: Express
+Vary: Origin, Accept-Encoding
+Access-Control-Allow-Credentials: true
+Cache-Control: no-store
+ETag: W/"28-a/FmpkCzmlqSO3x2hJlOHQrrJGQ"
+X-Content-Type-Options: nosniff
+
+{"error":"Missing authentication token"}

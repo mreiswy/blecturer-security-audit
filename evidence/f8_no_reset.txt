@@ -1,0 +1,7 @@
+/auth/forgot       404
+/forgot-password   404
+/password/reset    404
+/auth/reset        404
+/reset             404
+/lupa-password     404
+tautan lupa/forgot di halaman login: 0
