@@ -1,0 +1,57 @@
+# N-uji-negatif - ekonomi koin & permukaan API
+
+Diambil dengan sesi pemilik akun (cookie [REDACTED]). Saldo akun: 0 koin.
+
+## a) Pembelian reward 60 koin dengan saldo 0
+```
+POST /marketplace/purchase  reward_id=6 (_csrf valid, cookie sesi)
+HTTP 302 -> https://diksy.ilkom.unej.ac.id/marketplace
+
+```
+Pesan yang dirender di /marketplace setelah percobaan:
+```
+Koin kamu tidak cukup.
+```
+State setelah percobaan (dibaca ulang dari /marketplace):
+```
+Saldo kamu: 0 koin
+Riwayat pembelian: Belum ada pembelian.
+```
+Kesimpulan: pemeriksaan saldo dilakukan di server, bukan hanya di klien
+(tombol Beli tidak di-disable). Percobaan kedua dengan reward termurah pun
+harus ditolak dengan cara yang sama -- tidak diulang karena tidak ada nilai
+tambah dan setiap pembelian yang lolos akan permanen.
+
+## b) Permukaan API JSON
+```
+/api/quests         404
+/api/leaderboard    404
+/api/profile        404
+/api/me             404
+/api/users          404
+/api/marketplace    404
+/api/rewards        404
+/api/dashboard      404
+/api/notifications  404
+/api/submissions    404
+```
+Semua 404 dengan envelope JSON yang sama: `{"ok":false,"message":"Halaman yang
+kamu cari tidak ditemukan.","data":{},"errors":{}}`. Tidak ada API publik yang
+membocorkan data tanpa autentikasi; envelope konsisten juga berarti error tidak
+membocorkan stack trace.
+
+## c) Panel Termix port 8080 -- jalur konfigurasi
+```
+/version               401  40 B   {"error":"Missing authentication token"}
+/metrics               401  40 B   {"error":"Missing authentication token"}
+/health                200  15 B   {"status":"ok"}
+/users/sso-providers   200   2 B   []
+/api/health            200  3164 B  <!doctype html>... (SPA shell)
+/debug                 200  3164 B  <!doctype html>... (SPA shell)
+/api/users             200  3164 B  <!doctype html>... (SPA shell)
+/api/hosts             200  3164 B  <!doctype html>... (SPA shell)
+```
+`/version` dan `/metrics` membalas 401 (jalur nyata, terkunci). `/health` dan
+`/users/sso-providers` membalas JSON kecil non-sensitif. Sisanya SPA catch-all
+tepat 3164 B -- status 200 tanpa arti, BUKAN endpoint yang ada. Tidak
+ada kebocoran konfigurasi lewat jalur ini; temuan tetap CORS (#2), bukan ini.

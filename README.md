@@ -470,7 +470,10 @@ tidak ditemukan masalah**:
 | CSRF | Token terikat sesi; token dari sesi lain; token hilang | Ditolak (walau dengan status 500 — lihat #3) |
 | Session fixation | SID sebelum vs sesudah register & login; SID setelah logout | Diregenerasi; SID lama mati |
 | SQL injection | `/leaderboard?course=` dengan `4'`, `4)`, `4 AND 1=1`, `4 UNION SELECT 1`, `4;--` | 404 — parameter di-cast ke integer |
-| Rate limit | Login, register, resend verifikasi; bypass via `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `X-Client-IP`, `CF-Connecting-IP` | 429 aktif (login: 4 percobaan), header tidak mem-bypass |
+| Rate limit | Login, register, resend verifikasi; bypass via `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `X-Client-IP`, `CF-Connecting-IP` | 429 aktif (lihat #11 untuk kuota sebenarnya), header tidak mem-bypass |
+| Ekonomi koin | POST `/marketplace/purchase` `reward_id=6` (60 koin) dengan saldo 0 | Ditolak server-side: "Koin kamu tidak cukup", saldo tetap 0, riwayat kosong |
+| API JSON | `/api/{quests,leaderboard,profile,me,users,marketplace,rewards,dashboard,notifications,submissions}` dengan `Accept: application/json` | 404 dengan envelope JSON konsisten — tidak ada API yang tidak terautentikasi |
+| Panel Termix | `/version`, `/metrics` (anonim), `/api/health`, `/debug`, `/api/users`, `/api/hosts` | `/version` + `/metrics` → 401; `/health` + `/users/sso-providers` → JSON kecil non-sensitif; sisanya SPA catch-all 3164 B (bukan endpoint). Tidak ada kebocoran konfigurasi |
 | Duplikasi submit | POST ulang quest yang sudah dikirim | "Kamu sudah mengirim quest ini." |
 | Path traversal | `..%2f`, `%2e%2e/`, `%00`, `//etc/passwd`, `/index.php/.env` | 400/403/404 konsisten |
 | File sensitif | `.env`, `.git/config`, `storage/logs/laravel.log`, `phpinfo.php`, `backup.zip`, `db.sql`, `_ignition/health-check` | 403/404 |
@@ -516,6 +519,7 @@ tidak ditemukan masalah**:
     ├── f10_hpp_csrf.txt           _csrf ganda → 500; bypass posisional TIDAK terbukti
     ├── f13_rate_limit.txt         limiter per-IP ~10 percobaan, tanpa Retry-After
     ├── n_csrf_cross_session.txt   token lintas sesi ditolak (uji negatif)
+    ├── n_negative_surface.txt     ekonomi koin, envelope API JSON, jalur Termix
     ├── quests_before.html         snapshot Quest Board sebelum pengujian (data disamarkan)
     ├── marketplace.html           snapshot Marketplace (data disamarkan)
     └── *.js                       api.js, quests.js, marketplace.js, layout.js
